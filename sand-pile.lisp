@@ -32,29 +32,41 @@
 ;; }
 
 ;;; Code:
-(require :alexandria) (require :metabang-bind)
+(require 'alexandria) (require 'metabang-bind)
 (defpackage #:sand-pile (:use :common-lisp :alexandria :metabang-bind))
 (in-package :sand-pile)
 
-(defvar *size* 20)
-(defvar *dim* 2)
-(defvar *grid* (make-array (make-list *dim* :initial-element *size*)
-                           :element-type :number))
+(defvar max-init       10)
+(defvar critical-slope 2)
+(defvar *size*         20)
+(defvar *dim*          2)
+(defvar *grid*
+  (make-array (make-list *dim* :initial-element *size*) :element-type :number))
 
-(defun settle (rule)
-  "Apply RULE to all pairs of neighbors in the `*grid*'.
-RULE should take two neighbor values at time step n as input and
-return their two values at time step n+1.")
+(defun z (coord) (apply #'aref *grid* coord))
+(defun set-z (coord new) (setf (apply #'aref *grid* coord) new))
+(defsetf z set-z)
 
-(defun init (rule)
-  "Use RULE to initialize the `*grid*'.
-RULE should take grid coordinates and return the starting value."
-  )
+(defun init ()
+  "Randomly initialize the `*grid*'."
+  (mapc (lambda (coord) (setf (z coord) (random max-init)))
+        (cross (array-dimensions *grid*))))
 
-(defun run (times rule &aux (history (list *grid*)))
-  "Run the system for TIMES time steps using update RULE and `settle'.
-Return a list of the states of the system at each time step."
-  (dotimes (n times history) (settle rule) (push *grid* history)))
+(defun update-rule (coord)
+  "Update a coordinate in the `*grid*'."
+  (mapc (lambda (neighbor)
+          (when (> (- (z coord) (z neighbor)) critical-slope)
+            (decf (z coord))
+            (incf (z neighbor))))
+        (sort (neighbors coord) #'< :key (lambda (it) (apply #'aref *grid* it)))))
+
+(defun run (steps)
+  (init)
+  (let ((history (list (copy-array *grid*))))
+    (dotimes (n steps history)
+      (mapc #'update-rule (shuffle (cross (array-dimensions *grid*))))
+      (incf (z (random-elt (cross (array-dimensions *grid*)))))
+      (push (copy-array *grid*) history))))
 
 
 ;;; Utility
@@ -69,7 +81,7 @@ Return a list of the states of the system at each time step."
       (mapcar #'list (range (car dimensions)))))
 
 (defun neighbors (dim)
-  (remove-if (lambda (dim) (some (lambda (n) (or (< n 0) (< *size* n))) dim))
+  (remove-if (lambda (dim) (some (lambda (n) (or (< n 0) (<= *size* n))) dim))
              (mapcar (lambda (off) (map 'list #'+ off dim))
                      (mapcar (lambda (off) (mapcar #'1- off))
                              (remove (make-list *dim* :initial-element 1)
