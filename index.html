@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+               "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<title>sand-pile.lisp</title>
+<meta http-equiv="Content-Type" content="text/html;charset=iso-8859-1"/>
+<meta name="title" content="sand-pile.lisp"/>
+<meta name="generator" content="Org-mode"/>
+<meta name="generated" content="2012-06-08T12:45-0600"/>
+<meta name="author" content="Eric Schulte"/>
+<meta name="description" content=""/>
+<meta name="keywords" content=""/>
+
+<link rel="stylesheet" href="docco.css" type="text/css">
+<script type="text/javascript">
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+
+</head>
+<body>
+
+<div id="preamble">
+
+</div>
+
+<div id="content"><table>
+<tr><th class="docs">
+
+<h1 class="title">sand-pile.lisp</h1>
+
+<p>This program implements the 2D CA used to investigate self-organized
+criticality through the simulation of a simplified sand-pile model in
+the landmark paper on Self-organized criticality (<a href="http://chaos.swarthmore.edu/courses/Physics120_2008/docs/btw.pdf">pdf</a>).
+</p>
+<pre class="example">
+@article{bak1988self,
+  author={Bak, P. and Tang, C. and Wiesenfeld, K. and others},
+  title={Self-organized criticality},
+  journal={Physical review A},
+  year={1988},
+  volume={38},
+  number={1},
+  pages={364--374}
+}
+</pre>
+
+
+<p>
+Two easy future enhancements would be to:
+</p><ol>
+<li>Track the size of each avalanche.  This could be done through an
+   extension of the <code>update-rule</code> function.  This should yield a
+   power-law size distribution.
+</li>
+<li>Track the average slope after every iteration.
+</li>
+</ol>
+
+
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #73d216;">;;; </span><span style="color: #73d216;">sand-pile.lisp --- 2D CA simulating a sand pile</span>
+
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">Copyright 2012 Eric Schulte</span>
+
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">This program is free software: you can redistribute it and/or modify</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">it under the terms of the GNU General Public License as published by</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">the Free Software Foundation, either version 3 of the License, or</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">(at your option) any later version.</span>
+
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">This program is distributed in the hope that it will be useful,</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">but WITHOUT ANY WARRANTY; without even the implied warranty of</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">GNU General Public License for more details.</span>
+
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">You should have received a copy of the GNU General Public License</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">along with this program.  If not, see &lt;<a href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>&gt;.</span>
+
+<span style="color: #73d216;">;;; </span><span style="color: #73d216;">Commentary:</span>
+
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">This program implements the 2D CA used to investigate</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">self-organized criticality through the simulation of a simplified</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">sand-pile model in the following publication.</span>
+
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">@article{bak1988self,</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">author={Bak, P. and Tang, C. and Wiesenfeld, K. and others},</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">title={Self-organized criticality},</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">journal={Physical review A},</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">year={1988},</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">volume={38},</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">number={1},</span>
+<span style="color: #73d216;">;;   </span><span style="color: #73d216;">pages={364--374}</span>
+<span style="color: #73d216;">;; </span><span style="color: #73d216;">}</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+First we'll define the package and load the <a href="http://common-lisp.net/project/alexandria/">alexandria</a> library of
+common Common Lisp extensions.
+</p>
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #73d216;">;;; </span><span style="color: #73d216;">Code:</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">require</span> '<span style="color: #e6a8df;">alexandria</span><span style="color: #7f7f7f;">)</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defpackage</span> #<span style="color: #ad7fa8;">:sand-pile</span> <span style="color: #7f7f7f;">(</span><span style="color: #ad7fa8;">:use</span> <span style="color: #ad7fa8;">:common-lisp</span> <span style="color: #ad7fa8;">:alexandria</span><span style="color: #7f7f7f;">))</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">in-package</span> <span style="color: #ad7fa8;">:sand-pile</span><span style="color: #7f7f7f;">)</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+Next we define a number of variables defining the size, dimensionality
+and initial conditions of the simulation.  Aside from the <code>gnuplot</code>
+code this implementation is dimension agnostic allowing simulation of
+sand-piles in any number of dimensions.
+</p><table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+<caption></caption>
+<colgroup><col class="left" /><col class="right" /><col class="left" />
+</colgroup>
+<thead>
+<tr><th scope="col" class="left">name</th><th scope="col" class="right">value</th><th scope="col" class="left">description</th></tr>
+</thead>
+<tbody>
+<tr><td class="left">max-init</td><td class="right">100</td><td class="left">maximum value used during random initialization</td></tr>
+<tr><td class="left">critical-slope</td><td class="right">2</td><td class="left">the maximum slope allowed</td></tr>
+<tr><td class="left"><b>size</b></td><td class="right">40</td><td class="left">the size of grid along each dimension</td></tr>
+<tr><td class="left"><b>dim</b></td><td class="right">2</td><td class="left">the number of dimensions of the sand-pile grid</td></tr>
+<tr><td class="left"><b>grid</b></td><td class="right"></td><td class="left">the actual sand-pile grid</td></tr>
+</tbody>
+</table>
+
+
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defvar</span> <span style="color: #fcaf3e;">max-init</span>       100<span style="color: #7f7f7f;">)</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defvar</span> <span style="color: #fcaf3e;">critical-slope</span> 2<span style="color: #7f7f7f;">)</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defvar</span> <span style="color: #fcaf3e;">*size*</span>         40<span style="color: #7f7f7f;">)</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defvar</span> <span style="color: #fcaf3e;">*dim*</span>          2<span style="color: #7f7f7f;">)</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defvar</span> <span style="color: #fcaf3e;">*grid*</span>
+  <span style="color: #7f7f7f;">(</span>make-array <span style="color: #7f7f7f;">(</span>make-list *dim* <span style="color: #ad7fa8;">:initial-element</span> *size*<span style="color: #7f7f7f;">)</span> <span style="color: #ad7fa8;">:element-type</span> <span style="color: #ad7fa8;">:number</span><span style="color: #7f7f7f;">))</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+A number of simple utility functions are defined before we dive into
+the actual implementation.  These should all be fairly straight
+forward.
+</p>
+<ul>
+<li>The <code>z</code> function is used to get and set the height of a particular
+  <code>(x,y)</code> point in the <code>*grid*</code>.
+
+</li>
+<li>The <code>range</code> function returns a range of integers.
+
+</li>
+<li>The <code>cross</code> function returns all indices for a set of dimensions.
+<pre class="example">
+(cross '(2 2)) ;; =&gt; ((0 0) (1 0) (0 1) (1 1))
+</pre>
+
+
+</li>
+<li>The <code>neighbors</code> function returns the neighbors of a particular point
+  in the grid.
+</li>
+</ul>
+
+
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">z</span> <span style="color: #7f7f7f;">(</span>coord<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>apply #'aref *grid* coord<span style="color: #7f7f7f;">))</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">set-z</span> <span style="color: #7f7f7f;">(</span>coord new<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>setf <span style="color: #7f7f7f;">(</span>apply #'aref *grid* coord<span style="color: #7f7f7f;">)</span> new<span style="color: #7f7f7f;">))</span>
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defsetf</span> <span style="color: #fce94f;">z</span> set-z<span style="color: #7f7f7f;">)</span>
+
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">range</span> <span style="color: #7f7f7f;">(</span>n<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">loop</span> for i upto <span style="color: #7f7f7f;">(</span>1- n<span style="color: #7f7f7f;">)</span> collect i<span style="color: #7f7f7f;">))</span>
+
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">cross</span> <span style="color: #7f7f7f;">(</span>dimensions<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">if</span> <span style="color: #7f7f7f;">(</span>cdr dimensions<span style="color: #7f7f7f;">)</span>
+      <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">let</span> <span style="color: #7f7f7f;">((</span>this <span style="color: #7f7f7f;">(</span>range <span style="color: #7f7f7f;">(</span>car dimensions<span style="color: #7f7f7f;">))))</span>
+        <span style="color: #7f7f7f;">(</span>mapcan <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>rst<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>mapcar <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>el<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>cons el rst<span style="color: #7f7f7f;">))</span> this<span style="color: #7f7f7f;">))</span>
+                <span style="color: #7f7f7f;">(</span>cross <span style="color: #7f7f7f;">(</span>cdr dimensions<span style="color: #7f7f7f;">))))</span>
+      <span style="color: #7f7f7f;">(</span>mapcar #'list <span style="color: #7f7f7f;">(</span>range <span style="color: #7f7f7f;">(</span>car dimensions<span style="color: #7f7f7f;">)))))</span>
+
+<span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">neighbors</span> <span style="color: #7f7f7f;">(</span>dim<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span>remove-if <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>dim<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>some <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>n<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>or <span style="color: #7f7f7f;">(</span>&lt; n 0<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>&lt;= *size* n<span style="color: #7f7f7f;">)))</span> dim<span style="color: #7f7f7f;">))</span>
+             <span style="color: #7f7f7f;">(</span>mapcar <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>off<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>map 'list #'+ off dim<span style="color: #7f7f7f;">))</span>
+                     <span style="color: #7f7f7f;">(</span>mapcar <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>off<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>mapcar #'1- off<span style="color: #7f7f7f;">))</span>
+                             <span style="color: #7f7f7f;">(</span>remove <span style="color: #7f7f7f;">(</span>make-list *dim* <span style="color: #ad7fa8;">:initial-element</span> 1<span style="color: #7f7f7f;">)</span>
+                               <span style="color: #7f7f7f;">(</span>cross <span style="color: #7f7f7f;">(</span>make-list *dim* <span style="color: #ad7fa8;">:initial-element</span> 3<span style="color: #7f7f7f;">))</span>
+                               <span style="color: #ad7fa8;">:test</span> #'tree-equal<span style="color: #7f7f7f;">)))))</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+To start a run we initialize every point in the <code>*grid*</code> to a random
+value.
+</p>
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">init</span> <span style="color: #7f7f7f;">()</span>
+  <span style="color: #e9b96e;">"Randomly initialize the `</span><span style="color: #e6a8df;">*grid*</span><span style="color: #e9b96e;">'."</span>
+  <span style="color: #7f7f7f;">(</span>mapc <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>coord<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>setf <span style="color: #7f7f7f;">(</span>z coord<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>random max-init<span style="color: #7f7f7f;">)))</span>
+        <span style="color: #7f7f7f;">(</span>cross <span style="color: #7f7f7f;">(</span>array-dimensions *grid*<span style="color: #7f7f7f;">))))</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+The <code>update</code> function checks if any of the slopes into or out of a
+particular coordinate are above the critical value (<code>critical-slope</code>)
+and if so it recursively calls itself to perform sand avalanches.
+</p>
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">update</span> <span style="color: #7f7f7f;">(</span>coord<span style="color: #7f7f7f;">)</span>
+  <span style="color: #e9b96e;">"Update a coordinate in the `</span><span style="color: #e6a8df;">*grid*</span><span style="color: #e9b96e;">'."</span>
+  <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">flet</span> <span style="color: #7f7f7f;">((</span>slide <span style="color: #7f7f7f;">(</span>a b<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">when</span> <span style="color: #7f7f7f;">(</span>&gt; <span style="color: #7f7f7f;">(</span>- <span style="color: #7f7f7f;">(</span>z a<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>z b<span style="color: #7f7f7f;">))</span> critical-slope<span style="color: #7f7f7f;">)</span>
+                        <span style="color: #7f7f7f;">(</span>incf <span style="color: #7f7f7f;">(</span>z b<span style="color: #7f7f7f;">))</span> <span style="color: #7f7f7f;">(</span>decf <span style="color: #7f7f7f;">(</span>z a<span style="color: #7f7f7f;">))</span> t<span style="color: #7f7f7f;">)))</span>
+    <span style="color: #7f7f7f;">(</span>mapc #'update
+          <span style="color: #7f7f7f;">(</span>remove-if-not <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>neighbor<span style="color: #7f7f7f;">)</span>
+                           <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">when</span> <span style="color: #7f7f7f;">(</span>or <span style="color: #7f7f7f;">(</span>slide coord neighbor<span style="color: #7f7f7f;">)</span>
+                                     <span style="color: #7f7f7f;">(</span>slide neighbor coord<span style="color: #7f7f7f;">))</span>
+                             neighbor<span style="color: #7f7f7f;">))</span>
+                         <span style="color: #7f7f7f;">(</span>sort <span style="color: #7f7f7f;">(</span>neighbors coord<span style="color: #7f7f7f;">)</span> #'&lt;
+                               <span style="color: #ad7fa8;">:key</span> <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">lambda</span> <span style="color: #7f7f7f;">(</span>it<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span>apply #'aref *grid* it<span style="color: #7f7f7f;">)))))))</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+The <code>gnuplot</code> function is used to dump grid states into a running
+<code>gnuplot</code> instance to provide a 3D visualization of a running
+simulation.
+</p>
+
+
+
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">gnuplot</span> <span style="color: #7f7f7f;">(</span>stream title<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">unless</span> <span style="color: #7f7f7f;">(</span>= *dim* 2<span style="color: #7f7f7f;">)</span> <span style="color: #7f7f7f;">(</span><span style="color: #ff4b4b; font-weight: bold;">error</span> <span style="color: #e9b96e;">"can only plot 2D grids"</span><span style="color: #7f7f7f;">))</span>
+  <span style="color: #73d216;">;; </span><span style="color: #73d216;">Not used in interactive runs, used to generate the movie below.</span>
+  <span style="color: #73d216;">;; </span><span style="color: #73d216;">(format stream "set term png~%")</span>
+  <span style="color: #73d216;">;; </span><span style="color: #73d216;">(format stream "set output '~~/src/sand-pile/plots/~a.png'~%" title)</span>
+  <span style="color: #7f7f7f;">(</span>format stream <span style="color: #e9b96e;">"set title '~a'~%"</span> title<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span>format stream <span style="color: #e9b96e;">"splot '-' matrix with pm3d notitle~%"</span><span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span>format stream <span style="color: #e9b96e;">"~{~{~a~^ ~}~%~}e~%EOF~%"</span>
+          <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">loop</span> <span style="color: #ad7fa8;">:for</span> x <span style="color: #ad7fa8;">:below</span> <span style="color: #7f7f7f;">(</span>array-dimension *grid* 0<span style="color: #7f7f7f;">)</span>
+             <span style="color: #ad7fa8;">:collect</span> <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">loop</span> <span style="color: #ad7fa8;">:for</span> y <span style="color: #ad7fa8;">:below</span> <span style="color: #7f7f7f;">(</span>array-dimension *grid* 1<span style="color: #7f7f7f;">)</span>
+                         <span style="color: #ad7fa8;">:collect</span> <span style="color: #7f7f7f;">(</span>aref *grid* x y<span style="color: #7f7f7f;">)))))</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+<p>
+Finally the <code>run</code> function initializes a grid, and runs for some
+number of <code>steps</code> feeding updates to <code>gnuplot</code> for visualization.
+</p>
+<p>
+To put everything together:
+</p><ol>
+<li>Make a fifo pipe through which Lisp will send data to <code>gnuplot</code>.
+<pre class="example">
+mkfifo /tmp/feedgnuplot &amp;&amp; gnuplot &lt; /tmp/feedgnuplot
+</pre>
+
+</li>
+<li>Load up the <code>sand-pile.lisp</code> file and then run the following.
+<pre class="example">
+(with-open-file (out "/tmp/feedgnuplot"
+                     :direction :output :if-exists :append)
+  (run 2500 out))
+</pre>
+
+</li>
+</ol>
+
+
+<p>
+</th>
+    <td class="code">
+<pre class="src src-lisp"><span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">defun</span> <span style="color: #fce94f;">run</span> <span style="color: #7f7f7f;">(</span>steps stream<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span>init<span style="color: #7f7f7f;">)</span>
+  <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">dotimes</span> <span style="color: #7f7f7f;">(</span>n steps<span style="color: #7f7f7f;">)</span>
+    <span style="color: #7f7f7f;">(</span><span style="color: #b4fa70;">let</span> <span style="color: #7f7f7f;">((</span>coord <span style="color: #7f7f7f;">(</span>random-elt <span style="color: #7f7f7f;">(</span>cross <span style="color: #7f7f7f;">(</span>array-dimensions *grid*<span style="color: #7f7f7f;">)))))</span>
+      <span style="color: #7f7f7f;">(</span>incf <span style="color: #7f7f7f;">(</span>z coord<span style="color: #7f7f7f;">))</span> <span style="color: #7f7f7f;">(</span>update coord<span style="color: #7f7f7f;">))</span>
+    <span style="color: #7f7f7f;">(</span>gnuplot stream n<span style="color: #7f7f7f;">)))</span>
+</pre></td></tr>
+<tr><th class="docs">
+
+
+
+</p></td></tr>
+</table></div>
+
+<center>
+The result should look something like this.
+  <p>
+    <video width="640" height="480" controls preload>
+      <source src="sand-pile.avi" type="video/avi" />
+      <source src="sand-pile.ogg" type="video/ogg" />
+    </video>
+  </p>
+</center>
+
+</body>
+</html>
