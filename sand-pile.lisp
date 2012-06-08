@@ -36,9 +36,9 @@
 (defpackage #:sand-pile (:use :common-lisp :alexandria :metabang-bind))
 (in-package :sand-pile)
 
-(defvar max-init       10)
+(defvar max-init       100)
 (defvar critical-slope 2)
-(defvar *size*         20)
+(defvar *size*         40)
 (defvar *dim*          2)
 (defvar *grid*
   (make-array (make-list *dim* :initial-element *size*) :element-type :number))
@@ -57,16 +57,25 @@
   (mapc (lambda (neighbor)
           (when (> (- (z coord) (z neighbor)) critical-slope)
             (decf (z coord))
-            (incf (z neighbor))))
+            (incf (z neighbor))
+            (update-rule neighbor)))
         (sort (neighbors coord) #'< :key (lambda (it) (apply #'aref *grid* it)))))
 
-(defun run (steps)
+(defun gnuplot (stream title)
+  (unless (= *dim* 2) (error "can only plot 2D grids"))
+  (format stream "set title '~a'~%" title)
+  (format stream "splot '-' matrix with pm3d~%")
+  (format stream "~{~{~a~^ ~}~%~}e~%EOF~%"
+          (loop :for x :below (array-dimension *grid* 0)
+             :collect (loop :for y :below (array-dimension *grid* 1)
+                         :collect (aref *grid* x y)))))
+
+(defun run (steps stream)
   (init)
-  (let ((history (list (copy-array *grid*))))
-    (dotimes (n steps history)
-      (mapc #'update-rule (shuffle (cross (array-dimensions *grid*))))
-      (incf (z (random-elt (cross (array-dimensions *grid*)))))
-      (push (copy-array *grid*) history))))
+  (dotimes (n steps)
+    (mapc #'update-rule (shuffle (cross (array-dimensions *grid*))))
+    (incf (z (random-elt (cross (array-dimensions *grid*)))))
+    (gnuplot stream n)))
 
 
 ;;; Utility
@@ -87,5 +96,13 @@
                              (remove (make-list *dim* :initial-element 1)
                                (cross (make-list *dim* :initial-element 3))
                                :test #'tree-equal)))))
+
+;; To run through gnuplot do
+;;  1. rm -f /tmp/feedg
+;;  2. mkfifo /tmp/feedg
+;;  3. gnuplot < /tmp/feedg
+;;  4. evaluate the following
+;;     (with-open-file (out "/tmp/feedg" :direction :output :if-exists :append)
+;;       (run 1000 out))
 
 ;;; sand-pile.lisp ends here
