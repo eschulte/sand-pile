@@ -1,0 +1,211 @@
+#+Title: sand-pile.lisp
+#+Author: Eric Schulte
+#+Style: <link rel="stylesheet" href="docco.css" type="text/css">
+#+Property: tangle sand-pile.lisp
+
+This program implements the 2D CA used to investigate self-organized
+criticality through the simulation of a simplified sand-pile model in
+the landmark paper on Self-organized criticality ([[http://chaos.swarthmore.edu/courses/Physics120_2008/docs/btw.pdf][pdf]]).
+
+: @article{bak1988self,
+:   author={Bak, P. and Tang, C. and Wiesenfeld, K. and others},
+:   title={Self-organized criticality},
+:   journal={Physical review A},
+:   year={1988},
+:   volume={38},
+:   number={1},
+:   pages={364--374}
+: }
+
+Two easy future enhancements would be to:
+1. Track the size of each avalanche.  This could be done through an
+   extension of the =update-rule= function.  This should yield a
+   power-law size distribution.
+2. Track the average slope after every iteration.
+
+#+begin_src lisp :padline no
+  ;;; sand-pile.lisp --- 2D CA simulating a sand pile
+  
+  ;; Copyright 2012 Eric Schulte
+  
+  ;; This program is free software: you can redistribute it and/or modify
+  ;; it under the terms of the GNU General Public License as published by
+  ;; the Free Software Foundation, either version 3 of the License, or
+  ;; (at your option) any later version.
+  
+  ;; This program is distributed in the hope that it will be useful,
+  ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ;; GNU General Public License for more details.
+  
+  ;; You should have received a copy of the GNU General Public License
+  ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+  ;;; Commentary:
+
+  ;; This program implements the 2D CA used to investigate
+  ;; self-organized criticality through the simulation of a simplified
+  ;; sand-pile model in the following publication.
+
+  ;; @article{bak1988self,
+  ;;   author={Bak, P. and Tang, C. and Wiesenfeld, K. and others},
+  ;;   title={Self-organized criticality},
+  ;;   journal={Physical review A},
+  ;;   year={1988},
+  ;;   volume={38},
+  ;;   number={1},
+  ;;   pages={364--374}
+  ;; }
+#+end_src
+
+First we'll define the package and load the [[http://common-lisp.net/project/alexandria/][alexandria]] library of
+common Common Lisp extensions.
+
+#+begin_src lisp
+  ;;; Code:
+  (require 'alexandria)
+  (defpackage #:sand-pile (:use :common-lisp :alexandria))
+  (in-package :sand-pile)
+#+end_src
+
+Next we define a number of variables defining the size, dimensionality
+and initial conditions of the simulation.  Aside from the =gnuplot=
+code this implementation is dimension agnostic allowing simulation of
+sand-piles in any number of dimensions.
+| name           | value | description                                     |
+|----------------+-------+-------------------------------------------------|
+| max-init       |   100 | maximum value used during random initialization |
+| critical-slope |     2 | the maximum slope allowed                       |
+| *size*         |    40 | the size of grid along each dimension           |
+| *dim*          |     2 | the number of dimensions of the sand-pile grid  |
+| *grid*         |       | the actual sand-pile grid                       |
+
+#+begin_src lisp
+  (defvar max-init       100)
+  (defvar critical-slope 2)
+  (defvar *size*         40)
+  (defvar *dim*          2)
+  (defvar *grid*
+    (make-array (make-list *dim* :initial-element *size*) :element-type :number))
+#+end_src
+
+A number of simple utility functions are defined before we dive into
+the actual implementation.  These should all be fairly straight
+forward.
+
+- The =z= function is used to get and set the height of a particular
+  =(x,y)= point in the =*grid*=.
+
+- The =range= function returns a range of integers.
+
+- The =cross= function returns all indices for a set of dimensions.
+  : (cross '(2 2)) ;; => ((0 0) (1 0) (0 1) (1 1))
+
+- The =neighbors= function returns the neighbors of a particular point
+  in the grid.
+
+#+begin_src lisp
+  (defun z (coord) (apply #'aref *grid* coord))
+  (defun set-z (coord new) (setf (apply #'aref *grid* coord) new))
+  (defsetf z set-z)
+  
+  (defun range (n)
+    (loop for i upto (1- n) collect i))
+  
+  (defun cross (dimensions)
+    (if (cdr dimensions)
+        (let ((this (range (car dimensions))))
+          (mapcan (lambda (rst) (mapcar (lambda (el) (cons el rst)) this))
+                  (cross (cdr dimensions))))
+        (mapcar #'list (range (car dimensions)))))
+  
+  (defun neighbors (dim)
+    (remove-if (lambda (dim) (some (lambda (n) (or (< n 0) (<= *size* n))) dim))
+               (mapcar (lambda (off) (map 'list #'+ off dim))
+                       (mapcar (lambda (off) (mapcar #'1- off))
+                               (remove (make-list *dim* :initial-element 1)
+                                 (cross (make-list *dim* :initial-element 3))
+                                 :test #'tree-equal)))))
+#+end_src
+
+To start a run we initialize every point in the =*grid*= to a random
+value.
+
+#+begin_src lisp
+  (defun init ()
+    "Randomly initialize the `*grid*'."
+    (mapc (lambda (coord) (setf (z coord) (random max-init)))
+          (cross (array-dimensions *grid*))))
+#+end_src
+
+The =update= function checks if any of the slopes into or out of a
+particular coordinate are above the critical value (=critical-slope=)
+and if so it recursively calls itself to perform sand avalanches.
+
+#+begin_src lisp
+  (defun update (coord)
+    "Update a coordinate in the `*grid*'."
+    (flet ((slide (a b) (when (> (- (z a) (z b)) critical-slope)
+                          (incf (z b)) (decf (z a)) t)))
+      (mapc #'update
+            (remove-if-not (lambda (neighbor)
+                             (when (or (slide coord neighbor)
+                                       (slide neighbor coord))
+                               neighbor))
+                           (sort (neighbors coord) #'<
+                                 :key (lambda (it) (apply #'aref *grid* it)))))))
+#+end_src
+
+The =gnuplot= function is used to dump grid states into a running
+=gnuplot= instance to provide a 3D visualization of a running
+simulation.
+
+#+begin_src lisp
+  (defun gnuplot (stream title)
+    (unless (= *dim* 2) (error "can only plot 2D grids"))
+    ;; Not used in interactive runs, used to generate the movie below.
+    ;; (format stream "set term png~%")
+    ;; (format stream "set output '~~/src/sand-pile/plots/~a.png'~%" title)
+    (format stream "set title '~a'~%" title)
+    (format stream "splot '-' matrix with pm3d notitle~%")
+    (format stream "~{~{~a~^ ~}~%~}e~%EOF~%"
+            (loop :for x :below (array-dimension *grid* 0)
+               :collect (loop :for y :below (array-dimension *grid* 1)
+                           :collect (aref *grid* x y)))))
+#+end_src
+
+Finally the =run= function initializes a grid, and runs for some
+number of =steps= feeding updates to =gnuplot= for visualization.
+
+To put everything together:
+1. Make a fifo pipe through which Lisp will send data to =gnuplot=.
+   : mkfifo /tmp/feedgnuplot && gnuplot < /tmp/feedgnuplot
+2. Load up the =sand-pile.lisp= file and then run the following.
+   : (with-open-file (out "/tmp/feedgnuplot"
+   :                      :direction :output :if-exists :append)
+   :   (run 2500 out))
+
+The result should look something like this.
+#+begin_html
+  <p>
+    <video width="640" height="480" controls preload>
+      <source src="sand-pile.avi" type="video/avi" />
+      <source src="sand-pile.ogg" type="video/ogg" />
+    </video>
+  </p>
+#+end_html
+
+#+begin_src lisp
+  (defun run (steps stream)
+    (init)
+    (dotimes (n steps)
+      (let ((coord (random-elt (cross (array-dimensions *grid*)))))
+        (incf (z coord)) (update coord))
+      (gnuplot stream n)))
+#+end_src
+
+# Local Variables:
+# org-export-html-postamble: nil
+# org-export-html-style-include-default: nil
+# org-docco-doccoize-me: t
+# End:
