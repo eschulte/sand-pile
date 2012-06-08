@@ -31,6 +31,19 @@
 ;;   pages={364--374}
 ;; }
 
+;; To run with graphics through gnuplot do the following:
+;;  1. rm -f /tmp/feedg
+;;  2. mkfifo /tmp/feedg
+;;  3. gnuplot < /tmp/feedg
+;;  4. evaluate the following
+;;     (with-open-file (out "/tmp/feedg" :direction :output :if-exists :append)
+;;       (run 1000 out))
+
+;;; Future Improvements:
+
+;; - track the size of each avalanche
+;; - track the average slope after every iteration
+
 ;;; Code:
 (require 'alexandria) (require 'metabang-bind)
 (defpackage #:sand-pile (:use :common-lisp :alexandria :metabang-bind))
@@ -54,17 +67,20 @@
 
 (defun update-rule (coord)
   "Update a coordinate in the `*grid*'."
-  (mapc (lambda (neighbor)
-          (when (> (- (z coord) (z neighbor)) critical-slope)
-            (decf (z coord))
-            (incf (z neighbor))
-            (update-rule neighbor)))
-        (sort (neighbors coord) #'< :key (lambda (it) (apply #'aref *grid* it)))))
+  (flet ((slide (a b) (when (> (- (z a) (z b)) critical-slope)
+                        (incf (z b)) (decf (z a)) t)))
+    (mapc #'update-rule
+          (remove-if-not (lambda (neighbor)
+                           (when (or (slide coord neighbor)
+                                     (slide neighbor coord))
+                             neighbor))
+                         (sort (neighbors coord) #'<
+                               :key (lambda (it) (apply #'aref *grid* it)))))))
 
 (defun gnuplot (stream title)
   (unless (= *dim* 2) (error "can only plot 2D grids"))
   (format stream "set title '~a'~%" title)
-  (format stream "splot '-' matrix with pm3d~%")
+  (format stream "splot '-' matrix with pm3d notitle~%")
   (format stream "~{~{~a~^ ~}~%~}e~%EOF~%"
           (loop :for x :below (array-dimension *grid* 0)
              :collect (loop :for y :below (array-dimension *grid* 1)
@@ -73,8 +89,8 @@
 (defun run (steps stream)
   (init)
   (dotimes (n steps)
-    (mapc #'update-rule (shuffle (cross (array-dimensions *grid*))))
-    (incf (z (random-elt (cross (array-dimensions *grid*)))))
+    (let ((coord (random-elt (cross (array-dimensions *grid*)))))
+      (incf (z coord)) (update-rule coord))
     (gnuplot stream n)))
 
 
@@ -96,13 +112,5 @@
                              (remove (make-list *dim* :initial-element 1)
                                (cross (make-list *dim* :initial-element 3))
                                :test #'tree-equal)))))
-
-;; To run through gnuplot do
-;;  1. rm -f /tmp/feedg
-;;  2. mkfifo /tmp/feedg
-;;  3. gnuplot < /tmp/feedg
-;;  4. evaluate the following
-;;     (with-open-file (out "/tmp/feedg" :direction :output :if-exists :append)
-;;       (run 1000 out))
 
 ;;; sand-pile.lisp ends here
